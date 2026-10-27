@@ -1,0 +1,23 @@
+VFS0090 Linux repair
+
+The source patches in this repository modify libfprint and its community
+Validity VFS0090 driver. They are provided under LGPL-2.1-or-later, as are
+the accompanying scripts and documentation. See LICENSE.
+
+Pinned source repositories and revisions are listed in upstream.json.
+
+Upstream work includes:
+- libfprint and its contributors: https://fprint.freedesktop.org/
+- The gugah libfprint VFS009x fork:
+  https://gitlab.archlinux.org/gugah/libfprint
+- The VFS0090 driver, originally developed by Nikita Mikhailov and
+  Marco Trevisan, and its subsequent contributors:
+  https://github.com/3v1n0/libfprint-tod-vfs0090
+  https://gitlab.archlinux.org/gugah/libfprint-tod-vfs0090
+- Related protocol research by uunicorn:
+  https://github.com/uunicorn/python-validity
+
+Upstream copyright notices remain in the fetched sources. This repository
+contains patches rather than a vendored copy of the full source tree.
+OpenSSL, NSS, GLib and other dependencies retain their own licenses.
+No affiliation with or endorsement by these projects or vendors is implied.

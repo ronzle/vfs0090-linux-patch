@@ -1,0 +1,10 @@
+{
+  "libfprint": {
+    "url": "https://gitlab.archlinux.org/gugah/libfprint.git",
+    "commit": "450e6aea0f5c92b3719d910c0defb2c85b0746df"
+  },
+  "vfs0090": {
+    "url": "https://gitlab.archlinux.org/gugah/libfprint-tod-vfs0090.git",
+    "commit": "7741a352f274c2e29ab6e6960f4eb8366ba86502"
+  }
+}

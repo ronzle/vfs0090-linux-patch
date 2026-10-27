@@ -1,0 +1,313 @@
+--- a/vfs0090.c
++++ b/vfs0090.c
+@@ -47,6 +47,8 @@
+ {
+   FpDevice parent;
+ 
++  gboolean cancel_requested;
++  gboolean interrupt_pending;
+   gboolean activated;
+   gboolean deactivating;
+   gboolean db_checked;
+@@ -194,7 +196,10 @@
+                       gpointer user_data, GError *error)
+ {
+   g_autofree VfsAsyncUsbOperationData *op_data = user_data;
+-  FpiDeviceVfs0090 *vdev;
++  FpiDeviceVfs0090 *vdev = FPI_DEVICE_VFS0090 (device);
++
++  vdev->interrupt_pending = FALSE;
++  g_clear_object (&vdev->cancellable);
+ 
+   if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+     {
+@@ -202,8 +207,6 @@
+       goto out;
+     }
+ 
+-  vdev = FPI_DEVICE_VFS0090 (device);
+-  g_clear_object (&vdev->cancellable);
+ 
+   if (error)
+     {
+@@ -247,7 +250,8 @@
+   fpi_usb_transfer_fill_bulk_full (transfer, EP_OUT,
+                                    (guint8 *) data, data_size, NULL);
+ 
+-  g_set_object (&vdev->cancellable, g_cancellable_new ());
++  g_clear_object (&vdev->cancellable);
++  vdev->cancellable = g_cancellable_new ();
+   fpi_usb_transfer_submit (transfer, VFS_USB_TIMEOUT,
+                            vdev->cancellable,
+                            async_write_callback, op_data);
+@@ -258,7 +262,10 @@
+                      gpointer user_data, GError *error)
+ {
+   g_autofree VfsAsyncUsbOperationData *op_data = user_data;
+-  FpiDeviceVfs0090 *vdev;
++  FpiDeviceVfs0090 *vdev = FPI_DEVICE_VFS0090 (device);
++
++  vdev->interrupt_pending = FALSE;
++  g_clear_object (&vdev->cancellable);
+ 
+   if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+     {
+@@ -266,9 +273,7 @@
+       goto out;
+     }
+ 
+-  vdev = FPI_DEVICE_VFS0090 (device);
+   vdev->buffer_length = 0;
+-  g_clear_object (&vdev->cancellable);
+ 
+   if (error)
+     {
+@@ -300,7 +305,8 @@
+                  g_cancellable_is_cancelled (vdev->cancellable));
+ 
+   transfer = fpi_usb_transfer_new (dev);
+-  g_set_object (&vdev->cancellable, g_cancellable_new ());
++  g_clear_object (&vdev->cancellable);
++  vdev->cancellable = g_cancellable_new ();
+ 
+   op_data = g_new0 (VfsAsyncUsbOperationData, 1);
+   op_data->callback = callback;
+@@ -309,6 +315,7 @@
+   switch (transfer_type)
+     {
+     case FP_TRANSFER_INTERRUPT:
++      vdev->interrupt_pending = TRUE;
+       timeout = 0;
+       fpi_usb_transfer_fill_interrupt_full (transfer,
+                                             EP_INTERRUPT, buffer,
+@@ -1607,6 +1614,18 @@
+   fpi_ssm_start (ssm, dev_open_callback);
+ }
+ 
++static gboolean
++stop_cancelled_scan (FpiSsm *ssm, FpDevice *dev)
++{
++  if (!FPI_DEVICE_VFS0090 (dev)->cancel_requested)
++    return FALSE;
++
++  fpi_ssm_mark_failed (ssm, g_error_new_literal (G_IO_ERROR,
++                                               G_IO_ERROR_CANCELLED,
++                                               "Fingerprint operation cancelled"));
++  return TRUE;
++}
++
+ static void
+ led_blink_callback_with_ssm (FpiUsbTransfer *transfer, FpDevice *dev,
+                              gpointer data, GError *error)
+@@ -1951,6 +1970,9 @@
+   FpiDeviceVfs0090 *vdev = FPI_DEVICE_VFS0090 (dev);
+   GError *error = NULL;
+ 
++  if (stop_cancelled_scan (ssm, dev))
++    return;
++
+   switch (fpi_ssm_get_cur_state (ssm))
+     {
+     case DB_CHECK_STATE_REQUEST:
+@@ -2014,7 +2036,6 @@
+       break;
+ 
+     case DB_CHECK_STATE_SUBMIT_RESULT:
+-      restart_scan_or_deactivate (vdev);
+       fpi_ssm_next_state (ssm);
+       break;
+ 
+@@ -2392,6 +2413,9 @@
+     0x51, 0x00, 0x20, 0x00, 0x00
+   };
+ 
++  if (stop_cancelled_scan (ssm, dev))
++    return;
++
+   switch (fpi_ssm_get_cur_state (ssm))
+     {
+     case IMAGE_DOWNLOAD_STATE_1:
+@@ -2446,7 +2470,6 @@
+       break;
+ 
+     case IMAGE_DOWNLOAD_STATE_SUBMIT_RESULT:
+-      restart_scan_or_deactivate (vdev);
+       fpi_ssm_next_state (ssm);
+       break;
+ 
+@@ -2536,6 +2559,9 @@
+   FpiDeviceVfs0090 *vdev = FPI_DEVICE_VFS0090 (dev);
+   GError *error = NULL;
+ 
++  if (stop_cancelled_scan (ssm, dev))
++    return;
++
+   switch (fpi_ssm_get_cur_state (ssm))
+     {
+     case SCAN_ERROR_STATE_LED_BLINK:
+@@ -2546,7 +2572,6 @@
+       break;
+ 
+     case SCAN_ERROR_STATE_REACTIVATE_REQUEST:
+-      restart_scan_or_deactivate (vdev);
+       fpi_ssm_next_state (ssm);
+       break;
+ 
+@@ -2575,17 +2600,20 @@
+ static void
+ finger_scan_callback (FpiSsm *ssm, FpDevice *dev, GError *error)
+ {
+-  if (error && !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+-    {
+-      fp_err ("Scan failed failed at state %d, unexpected "
+-              "device reply during finger scanning", fpi_ssm_get_cur_state (ssm));
+-
+-      fpi_device_action_error (dev, error);
+-    }
++  FpiDeviceVfs0090 *vdev = FPI_DEVICE_VFS0090 (dev);
++
++  if (error)
++    {
++      if (!vdev->action_error)
++        vdev->action_error = g_steal_pointer (&error);
++      g_clear_error (&error);
++      dev_deactivate (dev);
++      return;
++    }
++  if (vdev->cancel_requested)
++    dev_deactivate (dev);
+   else
+-    {
+-      g_clear_error (&error);
+-    }
++    restart_scan_or_deactivate (vdev);
+ }
+ 
+ static void
+@@ -2614,6 +2642,9 @@
+ {
+   FpiDeviceVfs0090 *vdev = FPI_DEVICE_VFS0090 (dev);
+   GError *error = NULL;
++
++  if (stop_cancelled_scan (ssm, dev))
++    return;
+ 
+   switch (fpi_ssm_get_cur_state (ssm))
+     {
+@@ -2724,6 +2755,9 @@
+   FpiDeviceVfs0090 *vdev = FPI_DEVICE_VFS0090 (dev);
+   GError *error = NULL;
+ 
++  if (stop_cancelled_scan (ssm, dev))
++    return;
++
+   switch (fpi_ssm_get_cur_state (ssm))
+     {
+     case ACTIVATE_STATE_CHECK_DB:
+@@ -2810,8 +2844,16 @@
+     fp_err ("Activation failed failed at state %d, unexpected "
+             "device reply during activation", fpi_ssm_get_cur_state (ssm));
+ 
++  if (error || vdev->cancel_requested)
++    {
++      if (!vdev->action_error)
++        vdev->action_error = g_steal_pointer (&error);
++      g_clear_error (&error);
++      dev_deactivate (dev);
++      return;
++    }
++
+   vdev->activated = TRUE;
+-
+   start_finger_scan (dev);
+ }
+ 
+@@ -2820,6 +2862,8 @@
+ {
+   FpiSsm *ssm;
+   FpiDeviceAction action = fpi_device_get_current_action (dev);
++
++  FPI_DEVICE_VFS0090 (dev)->cancel_requested = FALSE;
+ 
+   if (action == FPI_DEVICE_ACTION_CAPTURE)
+     {
+@@ -2974,6 +3018,9 @@
+   FpiSsm *child_ssm = NULL;
+   GError *error = NULL;
+ 
++  if (stop_cancelled_scan (ssm, dev))
++    return;
++
+   switch (fpi_ssm_get_cur_state (ssm))
+     {
+     case REACTIVATE_STATE_WAIT:
+@@ -2991,7 +3038,6 @@
+       break;
+ 
+     case REACTIVATE_STATE_SCAN:
+-      start_finger_scan (dev);
+       fpi_ssm_next_state (ssm);
+       break;
+ 
+@@ -3008,8 +3054,16 @@
+ static void
+ reactivate_ssm_callback (FpiSsm *ssm, FpDevice *dev, GError *error)
+ {
+-  if (error)
+-    fpi_device_action_error (dev, error);
++  FpiDeviceVfs0090 *vdev = FPI_DEVICE_VFS0090 (dev);
++  if (error || vdev->cancel_requested)
++    {
++      if (!vdev->action_error)
++        vdev->action_error = g_steal_pointer (&error);
++      g_clear_error (&error);
++      dev_deactivate (dev);
++      return;
++    }
++  start_finger_scan (dev);
+ }
+ 
+ static void
+@@ -3104,30 +3158,20 @@
+ {
+   FpiDeviceVfs0090 *vdev = FPI_DEVICE_VFS0090 (dev);
+ 
+-  if (!fp_device_is_open (dev))
+-    {
+-      g_cancellable_cancel (vdev->cancellable);
+-      return;
+-    }
+-
+-  if (!vdev->activated)
+-    {
+-      GError *error = NULL;
+-
+-      g_cancellable_cancel (vdev->cancellable);
+-
+-      if (!vfs0090_deinit (vdev, &error))
+-        fpi_device_action_error (dev, error);
+-      return;
+-    }
+-
+-  if (vdev->deactivating && vdev->action_error)
++  if (vdev->deactivating || vdev->cancel_requested)
+     return;
+ 
+-  g_set_error (&vdev->action_error, G_IO_ERROR, G_IO_ERROR_CANCELLED,
+-               "Device action cancelled");
+-
+-  dev_deactivate (dev);
++  vdev->cancel_requested = TRUE;
++  if (!vdev->action_error)
++    g_set_error_literal (&vdev->action_error, G_IO_ERROR,
++                         G_IO_ERROR_CANCELLED, "Device action cancelled");
++
++  /* Interrupt reads have no timeout and can be cancelled immediately.
++   * Finish an in-flight bulk request/reply before sending deactivation commands.
++   * The owning state machine observes cancel_requested and drains its children
++   * before completing the action. Never tear down NSS from this callback. */
++  if (vdev->interrupt_pending && vdev->cancellable)
++    g_cancellable_cancel (vdev->cancellable);
+ }
+ 
+ /* Usb id table of device */

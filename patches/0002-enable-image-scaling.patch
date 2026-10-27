@@ -1,0 +1,19 @@
+--- a/vfs0090.c
++++ b/vfs0090.c
+@@ -20,6 +20,7 @@
+ 
+ #define FP_COMPONENT "vfs009x"
+ 
++#include <config.h>
+ #include "drivers_api.h"
+ 
+ #include <errno.h>
+@@ -2240,7 +2241,7 @@
+   img->flags = FPI_IMAGE_H_FLIPPED;
+   memcpy (img->data, imgdown->image, VFS_IMAGE_SIZE * VFS_IMAGE_SIZE);
+ 
+-#ifdef HAVE_PIXMAN
++#if HAVE_PIXMAN
+   if (VFS_IMAGE_RESCALE > 1)
+     {
+       g_autoptr(FpImage) resized = NULL;

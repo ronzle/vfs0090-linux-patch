@@ -1,0 +1,92 @@
+--- a/vfs0090.c
++++ b/vfs0090.c
+@@ -533,62 +533,44 @@
+ static void
+ generate_main_seed (FpDevice *dev, VfsInit *vinit)
+ {
+-  char name[NAME_MAX], serial[NAME_MAX];
+-  FILE *name_file, *serial_file;
+-  int name_len, serial_len;
++  g_autofree char *name = NULL;
++  g_autofree char *serial = NULL;
++  const char *name_override = g_getenv ("VFS0090_PRODUCT_NAME");
++  const char *serial_override = g_getenv ("VFS0090_PRODUCT_SERIAL");
+   GError *error = NULL;
+-
+-  if (!(name_file = fopen (DMI_PRODUCT_NAME_NODE, "r")))
+-    {
+-      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_NOT_FOUND,
+-                                        "Can't open "
+-                                        DMI_PRODUCT_NAME_NODE);
+-      fp_err ("%s", error->message);
+-      fpi_device_action_error (dev, error);
+-      return;
+-    }
+-  if (!(serial_file = fopen (DMI_PRODUCT_SERIAL_NODE, "r")))
+-    {
+-      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_NOT_FOUND,
+-                                        "Can't open "
+-                                        DMI_PRODUCT_SERIAL_NODE);
+-      fp_err ("%s", error->message);
+-      fpi_device_action_error (dev, error);
+-      goto out_serial;
+-    }
+-
+-  if (fscanf (name_file, "%s", name) != 1)
++  gsize name_len, serial_len;
++
++  /* Allow the identity used when Windows paired the sensor in a VM. */
++  if (name_override && *name_override)
++    name = g_strdup (name_override);
++  else if (!g_file_get_contents (DMI_PRODUCT_NAME_NODE, &name, NULL, &error))
++    goto failed;
++
++  if (serial_override && *serial_override)
++    serial = g_strdup (serial_override);
++  else if (!g_file_get_contents (DMI_PRODUCT_SERIAL_NODE, &serial, NULL, &error))
++    goto failed;
++
++  g_strchomp (name);
++  g_strchomp (serial);
++  if (!*name || !*serial)
+     {
+       error = fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
+-                                        "Can't parse product name from "
+-                                        DMI_PRODUCT_NAME_NODE);
+-      fp_err ("%s", error->message);
+-      fpi_device_action_error (dev, error);
+-      goto out_closeall;
+-    }
+-
+-  if (fscanf (serial_file, "%s", serial) != 1)
+-    {
+-      error = fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID,
+-                                        "Can't parse product name from "
+-                                        DMI_PRODUCT_SERIAL_NODE);
+-      fp_err ("%s", error->message);
+-      fpi_device_action_error (dev, error);
+-      goto out_closeall;
++                                        "Empty sensor pairing identity");
++      goto failed;
+     }
+ 
+   name_len = strlen (name);
+   serial_len = strlen (serial);
+   vinit->main_seed_length = name_len + serial_len + 2;
+   vinit->main_seed = g_malloc0 (vinit->main_seed_length);
+-
+   memcpy (vinit->main_seed, name, name_len + 1);
+   memcpy (vinit->main_seed + name_len + 1, serial, serial_len + 1);
+-
+-out_closeall:
+-  fclose (serial_file);
+-out_serial:
+-  fclose (name_file);
++  return;
++
++failed:
++  fp_err ("%s", error->message);
++  fpi_device_action_error (dev, error);
+ }
+ 
+ #define usb_operation(func, dev, error_ptr) usb_operation_perform (STRINGIZE (func), func, dev, error_ptr)

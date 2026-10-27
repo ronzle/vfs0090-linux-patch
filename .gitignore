@@ -1,0 +1,15 @@
+/build/
+/dist/
+/local/
+__pycache__/
+*.pyc
+*.log
+*.core
+core.*
+*.so
+*.so.*
+*.exe
+*.pkg.tar.*
+*.tar.gz
+.env
+pairing.json

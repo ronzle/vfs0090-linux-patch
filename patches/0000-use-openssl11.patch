@@ -1,0 +1,13 @@
+diff --git a/meson.build b/meson.build
+index 7a51f02..7b65322 100644
+--- a/meson.build
++++ b/meson.build
+@@ -276,7 +276,7 @@ foreach i : driver_helpers
+ 
+         optional_deps += nss_dep
+     elif i == 'openssl'
+-        openssl_dep = dependency('openssl', version: '>= 3.0', required: false)
++        openssl_dep = dependency('openssl', version: '>= 1.1', required: false)
+         if not openssl_dep.found()
+             openssl_dep = dependency('openssl', required: false)
+             if not openssl_dep.found()

@@ -1,0 +1,4 @@
+* text=auto
+# Unified diff context lines and the upstream license retain their original whitespace.
+patches/*.patch -whitespace
+LICENSE -whitespace

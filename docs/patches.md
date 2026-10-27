@@ -50,7 +50,8 @@ of all error handling in this legacy driver.
 
 ## Validation record
 
-Locally tested on the T460s / 138a:0090:
+Locally tested on the T460s / 138a:0090, running Omarchy/Arch Linux with kernel
+`7.2.6-arch2-1` (`uname -r`):
 
 - All three enabled libfprint unit suites passed.
 - Sixteen hardware cancellations: 0, 1, 10, 50, 100, 250, 500 and 1000 ms after

@@ -12,6 +12,8 @@ The repository contains a patch series and scripts, not a replacement firmware o
 
 ## Status and scope
 
+Tested kernel: **`7.2.6-arch2-1`** (`uname -r`) on Omarchy/Arch Linux. Other kernels and distributions have not been validated.
+
 | Component | Validation |
 | --- | --- |
 | Enrollment and verification | Successful on the test T460s |
